@@ -303,7 +303,7 @@ def _embed_ingredients(
         recipe_vecs.append(fused_ing.mean(axis=0))
         recipe_ids.append(str(row["id"]))
 
-    logger.info("Embedded %d recipes (%.1f %% of DataFrame).",
+    logger.info("Embedded %d recipes (%.1f%% of DataFrame).",
                 len(recipe_vecs), 100 * len(recipe_vecs) / len(df))
     logger.debug("← _embed_ingredients done")
     return np.vstack(recipe_vecs), recipe_ids
@@ -356,13 +356,13 @@ def run(
                 index = faiss.index_factory(dim, "HNSW32", faiss.METRIC_INNER_PRODUCT)
                 index.add(embeddings_norm)
                 faiss.write_index(index, os.path.join(output_dir, "faiss.index"))
-                logger.info("FAISS index saved ✔︎")
+                logger.info("FAISS index saved")
             else:
                 raise ImportError  # force fallback branch
         except (ModuleNotFoundError, ImportError):
             import hnswlib
 
-            logger.warning("FAISS unavailable – using hnswlib fallback")
+            logger.warning("FAISS unavailable – using hnswlib fallback")
             dim = embeddings_norm.shape[1]
             index = hnswlib.Index(space="cosine", dim=dim)
             index.init_index(
