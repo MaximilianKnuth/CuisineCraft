@@ -1,3 +1,7 @@
 # Datasets
 /data/
 recipe1m_downloads/
+.env
+.pkl
+.idx
+
