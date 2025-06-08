@@ -30,6 +30,13 @@ else:
         logger.error(f"Error initializing recommender: {str(e)}")
         recommender = None
 
+def get_api_key():
+    """Get API key from request headers"""
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        return None
+    return api_key
+
 @app.route('/', methods=['GET'])
 def index():
     """Root endpoint that provides API information"""
@@ -46,6 +53,9 @@ def index():
                     "nutrition_goals": "Optional nutrition goals",
                     "max_missing": "Maximum missing ingredients (default: 2)",
                     "top_k": "Number of recommendations to return (default: 3)"
+                },
+                "headers": {
+                    "X-API-Key": "Deepseek API key (required)"
                 }
             },
             "/api/health": {
@@ -62,6 +72,11 @@ def recommend_recipes():
     global recommender         
     if recommender is None:
         return jsonify({"error": "Recipe recommender not initialized"}), 500
+    
+    # Check for API key
+    api_key = get_api_key()
+    if not api_key:
+        return jsonify({"error": "API key is required"}), 401
     
     data = request.json
     
@@ -85,6 +100,9 @@ def recommend_recipes():
     logger.info(f"Received recommendation request with {len(ingredients)} ingredients")
     
     try:
+        # Update the API key in the recommender
+        recommender.update_api_key(api_key)
+        
         # Get recommendations
         results = recommender.recommend(
             ingredients=ingredients,

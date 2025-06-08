@@ -88,17 +88,9 @@ class AdvancedRecipeRecommender:
         #)
         load_dotenv()  # this loads variables from .env into the environment
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        
-        
-        # Initialize LLM
-        self.llm = ChatOpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        model_name="deepseek-chat",
-        temperature=0.2,
-)
-
+        # Initialize LLM with a placeholder API key
+        self.api_key = None
+        self.llm = None
         
         # Initialize reranker
         self.reranker = pipeline(
@@ -110,6 +102,17 @@ class AdvancedRecipeRecommender:
             device=0 if faiss.get_num_gpus() > 0 else -1
         )
         self.recipe_embedder = RecipeEmbedder(logger=logger)
+
+    def update_api_key(self, api_key: str):
+        """Update the API key and reinitialize the LLM"""
+        self.api_key = api_key
+        self.llm = ChatOpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+            model_name="deepseek-chat",
+            temperature=0.2,
+        )
+
     def compute_tfidf_weights(self, ingredients_series: pd.Series) -> Dict[str, float]:
         """Compute TF-IDF weights for all ingredients across recipes"""
         joined = ingredients_series.apply(lambda ings: " ".join(i.lower() for i in ings))
@@ -120,8 +123,9 @@ class AdvancedRecipeRecommender:
         return dict(zip(vocab, mean_scores))
 
     def ask_llm(self, prompt: str) -> str:
-            return self.llm.invoke([{"role": "user", "content": prompt}]).content
-        
+        if not self.llm:
+            raise ValueError("API key not set. Please set the API key before making requests.")
+        return self.llm.invoke([{"role": "user", "content": prompt}]).content
         
     def create_query_embedding(self, 
                               ingredients: List[str],
