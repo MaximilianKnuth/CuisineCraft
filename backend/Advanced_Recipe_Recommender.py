@@ -3,22 +3,68 @@ import pandas as pd
 import faiss
 from typing import List, Dict, Any, Optional
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import OpenAI
+#from langchain_community.llms import OpenAI
+from langchain_openai import ChatOpenAI   # pip install -U langchain-openai
 from langchain.chains import RetrievalQA
 from transformers import pipeline
 from langchain_community.vectorstores import FAISS
 from langchain.chains.retrieval import create_retrieval_chain
 from dotenv import load_dotenv
-import os
+import os, requests, uuid, pathlib, logging
 from RecipeEmbedder_new import RecipeEmbedder
 from sklearn.feature_extraction.text import TfidfVectorizer
 import logging
+import requests
+from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(                        # look for backend/.env explicitly
+    Path(__file__).resolve().parent / ".env",
+    override=False                  # keep any shell‑exported vars
+)
 
 
+DEEPSEEK_IMG_ENDPOINT = "https://api.deepseek.com/v1/images/generations"
+DEEPSEEK_KEY = os.getenv("OPENAI_API_KEY")
+HUGGINGFACE_KEY = os.getenv("HUGGINGFACE_KEY")
+HF_TOKEN = os.getenv("HUGGINGFACE_KEY")
+HF_ENDPOINT = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static" / "dishes"
+PLACEHOLDER = "/static/plate_placeholder.png"
+SERVER_ORIGIN = os.getenv("SERVER_ORIGIN", "http://localhost:8000")
+# Absolute dir on disk where files are saved
+STATIC_DIR = Path(__file__).resolve().parent / "static" / "dishes"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+HF_TOKEN = os.getenv("HF_TOKEN")
 
+from pathlib import Path
+
+def generate_dish_image(title: str) -> str:
+    if not HF_TOKEN:
+        return "/static/plate_placeholder.png"
+
+    payload = {
+        "inputs": f"high‑res food photo of {title}, studio lighting, 4k",
+        "options": {"wait_for_model": True}
+    }
+    try:
+        r = requests.post(
+            HF_ENDPOINT,
+            headers={"Authorization": f"Bearer {HF_TOKEN}",
+                     "Content-Type": "application/json"},
+            json=payload, timeout=60
+        )
+        r.raise_for_status()
+        fname = f"{uuid.uuid4().hex[:12]}.png"
+        (STATIC_DIR / fname).write_bytes(r.content)       # ← writes file
+        return f"/static/dishes/{fname}"                  # relative path
+    except Exception as e:
+        logger.error("HF gen failed: %s", e)
+        return "/static/plate_placeholder.png"
 
 class AdvancedRecipeRecommender:
     def __init__(self, recipe_data_path: str, faiss_index_path: str):
@@ -44,13 +90,23 @@ class AdvancedRecipeRecommender:
 
         api_key = os.getenv("OPENAI_API_KEY")
         
+        
         # Initialize LLM
-        self.llm = OpenAI(openai_api_key=api_key,base_url="https://api.deepseek.com",temperature=0.2)
+        self.llm = ChatOpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        model_name="deepseek-chat",
+        temperature=0.2,
+)
+
         
         # Initialize reranker
         self.reranker = pipeline(
             "text-classification", 
             model="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            padding=True,            # pad shorter sequences
+            truncation=True,         # truncate longer ones
+            max_length=512,  # keep default (usually 512)
             device=0 if faiss.get_num_gpus() > 0 else -1
         )
         self.recipe_embedder = RecipeEmbedder(logger=logger)
@@ -63,15 +119,19 @@ class AdvancedRecipeRecommender:
         mean_scores = tfidf_matrix.mean(axis=0).A1
         return dict(zip(vocab, mean_scores))
 
-
+    def ask_llm(self, prompt: str) -> str:
+            return self.llm.invoke([{"role": "user", "content": prompt}]).content
+        
+        
     def create_query_embedding(self, 
-                              ingredients: List[str]))
-                              #dietary_preference: str,
-                              #nutrition_goals: Optional[Dict[str, float]] = None) -> np.ndarray:
-        return self.recipe_embedder.create_query_embedding_new(
-            ingredients=ingredients)
-            #dietary_preference=dietary_preference,
-            #nutrition_goals=nutrition_goals
+                              ingredients: List[str],
+                              dietary_preference: str,
+                              nutrition_goals: Optional[Dict[str, float]] = None) -> np.ndarray:
+                                  
+        return self.recipe_embedder.create_query_embedding(
+            ingredients=ingredients,
+            dietary_preference=dietary_preference,
+            nutrition_goals=nutrition_goals)
         
 
     def retrieve_candidate_recipes(self, 
@@ -135,43 +195,21 @@ class AdvancedRecipeRecommender:
             union = recipe_tokens | user_tokens
             return len(intersection) / len(union) if union else 0
 
-        def weighted_ingredient_score(recipe_ingredients, available_ingredients):
-            score = 0
-            matched = 0
-            recipe_set = set(i.lower() for i in recipe_ingredients)
-            available_set = set(i.lower() for i in available_ingredients)
-
-            for r in recipe_set:
-                for a in available_set:
-                    if a in r or r in a:
-                        tokens = r.split()
-                        token_score = sum(self.ingredient_weights.get(t, 1.0) for t in tokens)
-                        score += token_score
-                        matched += 1
-                        break
-            return score, len(recipe_set) - matched
 
         def compute_match(recipe_ingredients):
-            ingredient_match, missing = weighted_ingredient_score(recipe_ingredients, available_ingredients)
             jaccard = token_overlap_score(available_ingredients, recipe_ingredients)
-            return ingredient_match, missing, jaccard
+            return jaccard
 
         results = candidates.copy()
-        match_data = results['ingredients_clean'].apply(compute_match)
-        (
-            results['ingredient_match'], 
-            results['missing_count'], 
-            results['token_overlap']
-        ) = zip(*match_data)
+        results['token_overlap'] = results['ingredients_clean'].apply(compute_match)
+      
 
-        # Filter by max missing
-        results = results[results['missing_count'] <= max_missing].copy()
+       
 
         # Final combined score
         results['combined_score'] = (
-            0.2 * results['similarity_score'] +
-            0.6 * results['ingredient_match'] +
-            0.2 * results['token_overlap']
+            0.6 * results['similarity_score'] +
+            0.4 * results['token_overlap']
         )
 
         return results.sort_values('combined_score', ascending=False)
@@ -196,15 +234,16 @@ class AdvancedRecipeRecommender:
 
         # Thresholds
         if preferences['low_carb']:
-            preferences['max_energy'] = 500
+            preferences['max_energy'] = 1200
         if preferences['high_protein']:
-            preferences['min_protein'] = 20
+            preferences['min_protein'] = 15
         if preferences['low_fat']:
-            preferences['max_fat'] = 10
+            preferences['max_fat'] = 20
 
         # --- Step 2: Apply numeric filters ---
         filtered = candidates.copy()
-
+        print(filtered['nutrition_per_100g'])
+        
         if preferences.get('low_carb'):
             filtered = filtered[
                 filtered['nutrition_per_100g'].apply(
@@ -242,12 +281,12 @@ class AdvancedRecipeRecommender:
         
         # Prepare data for reranking
         rerank_pairs = []
-        for _, recipe in candidates.head(min(50, len(candidates))).iterrows():
+        for _, recipe in candidates.head(min(20, len(candidates))).iterrows():
             # Create description for each recipe
             recipe_desc = (
                 f"Title: {recipe['title']}\n"
                 f"Ingredients: {', '.join(recipe['ingredients_clean'])}\n"
-                f"Instructions: {recipe['instructions'][:200]}...\n"
+                f"Instructions: {recipe['clean_instructions'][:200]}...\n"
                 f"Nutrition: {recipe['nutrition_per_100g']}"
             )
             rerank_pairs.append((user_query, recipe_desc))
@@ -281,23 +320,23 @@ class AdvancedRecipeRecommender:
         You recommended the recipe "{recipe['title']}" which has these characteristics:
         - Ingredients: {', '.join(recipe['ingredients_clean'])}
         - Nutrition: {recipe['nutrition_per_100g']}
-        - Instructions: {recipe['instructions'][:100]}...
+        - Instructions: {recipe['clean_instructions'][:100]}...
         
         Write a brief explanation (2-3 sentences) for why this recipe matches their needs:
-        """
+        """.strip()
         
-        return self.llm(prompt)
+        return self.ask_llm(prompt)     
     
     def recommend(self, 
                  ingredients: List[str],
-                 #dietary_preference: str,
-                 #nutrition_goals: Optional[Dict[str, float]] = None,
-                 max_missing: int = 2,
-                 top_k: int = 5) -> Dict[str, Any]:
+                 dietary_preference: str,
+                 nutrition_goals: Optional[Dict[str, float]] = None,
+                 max_missing: int = 1,
+                 top_k: int = 3) -> Dict[str, Any]:
         """End-to-end recommendation pipeline"""
         # 1. Create query embedding
         query_vector = self.create_query_embedding(
-            ingredients) #, dietary_preference, nutrition_goals
+            ingredients,dietary_preference,nutrition_goals ) #, dietary_preference, nutrition_goals
         
         
         # 2. Retrieve initial candidates
@@ -320,12 +359,17 @@ class AdvancedRecipeRecommender:
                 lambda row: self.generate_recipe_explanation(row, user_query), axis=1
             )
         
+        # ───────── NEW ─────────
+        reranked['image_url'] = reranked['title'].apply(generate_dish_image)
+        # ───────────────────────
+        
         # Return top recommendations with explanations
         result = {
             "query": user_query,
             "total_candidates": len(candidates),
             "filtered_count": len(filtered),
-            "recommendations": reranked.to_dict('records') if not reranked.empty else []
+            "recommendations": reranked.to_dict('records') if not reranked.empty else [],
+      
         }
         
         return result
@@ -335,57 +379,53 @@ class AdvancedRecipeRecommender:
 if __name__ == "__main__":
     recommender = AdvancedRecipeRecommender(
         recipe_data_path="full_recipe_embeddings.pkl",
-        faiss_index_path="recipe_faiss_index.idx"
+        faiss_index_path="recipe_faiss_index_ingredients_embeddings.idx"
     )
     
     user_request = {
+    "dietary_preference": 
+            "quick, savoury week-night dinner that is high protein, low carb, dairy-free and ready in under 30 minutes,fitness dinner",
+            
     # ❶  — INGREDIENTS  ➜ 385-dim ingredient_embedding
     "ingredients": [
         "skinless chicken breast", 
+        "salad"
         "broccoli florets", 
         "brown basmati rice", 
+        "beef",
+        "sphagetti",
+        "carrots"
     ],
+    
+    "nutrition_goals": {
+        "energy": 1500, 
+        "fat": 30, 
     }
-    '''
-        # ❷  — DIETARY PREFERENCE  ➜ part of the 768-dim title_instruction_embedding  
-        #    • Capture meal type, nutrition style, exclusions, flavour, and time constraint
-        #    • This free-text line is concatenated with the ingredient list by your
-        #      `create_query_embedding` to form one coherent sentence.
-        "dietary_preference": (
-            "quick, savoury week-night dinner that is high protein, low carb, "
-            "dairy-free and ready in under 30 minutes,"
-            "fitness dinner"
-        ),
-
-        # ❸  — NUTRITION GOALS  ➜ 8 raw values → 15-dim enhanced_nutrition_embedding  
-        #    • Provide **all eight** macronutrient fields in the SAME order you trained on.
-        #    • Units: per-100 g (or 0 if the user has no strict target).
-        "nutrition_goals": {
-            "energy"       : 1200,    # kcal
-            "fat"          : 15,    # g
-            "saturates"    : 2,    # g
-            "carbohydrate" : 25,   # g
-            "sugars"       : 4,    # g
-            "fibre"        : 6,    # g
-            "protein"      : 32,   # g
-            "salt"         : 2   # g
-        }
-        # ❹  — FSA block is still auto-filled with zeros in your code
-        }
-    '''
+    }
     
     results = recommender.recommend(
         ingredients=user_request["ingredients"],
-        #dietary_preference=user_request["dietary_preference"],
-        #nutrition_goals=user_request["nutrition_goals"],
+        dietary_preference=user_request["dietary_preference"],
+        nutrition_goals=user_request["nutrition_goals"],
         max_missing=2,
-        top_k=5
+        top_k=3
 )
+   
     
     print(f"Found {len(results['recommendations'])} recommendations")
-    for i, recipe in enumerate(results['recommendations']):
+    for i, recipe in enumerate(results['recommendations']):      # ← only 3 rows
+        # 1) ask DeepSeek for a photo of this dish
+        image_url = generate_dish_image(recipe['title'])          # ★ NEW ★
+
+        # 2) (optional) attach it back onto the dict so the UI can use it later
+        recipe['image_url'] = image_url
+
+        # 3) logging / debug printout
         print(f"\n{i+1}. {recipe['title']}")
         print(f"Explanation: {recipe['explanation']}")
-        print(f"Ingredients: {', '.join(recipe['ingredients_clean'][:5])}...")
-        print(f"Instructions: {recipe['instructions'][:100]}...")
-        print(f"Nutrition (per 100g): protein={recipe['nutrition_per_100g'].get('protein', 'N/A')}g, carbs={recipe['nutrition_per_100g'].get('carbohydrate', 'N/A')}g")
+        print(f"Ingredients: {', '.join(recipe['ingredients_clean'][:5])}…")
+        print(f"Instructions: {recipe['clean_instructions'][:100]}…")
+        print(f"Nutrition (per 100g): "
+            f"protein={recipe['nutrition_per_100g'].get('protein','N/A')} g, "
+            f"carbs={recipe['nutrition_per_100g'].get('carbohydrate','N/A')} g, "
+            f"image={image_url}")                               # ← view URL

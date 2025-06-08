@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recipe Recommender</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        }
+        .recipe-card {
+            transition: all 0.3s ease;
+        }
+        .recipe-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .ingredient-tag {
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .loader {
+            border-top-color: #3498db;
+            animation: spinner 1.5s linear infinite;
+        }
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="gradient-bg py-8">
+        <div class="container mx-auto px-4">
+            <h1 class="text-4xl font-bold text-center text-white">Smart Recipe Recommender</h1>
+            <p class="text-center text-white text-xl mt-2">Find delicious recipes based on your ingredients and preferences</p>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Ingredients Section -->
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4">What ingredients do you have?</h2>
+                    <div class="flex items-center mb-2">
+                        <input id="ingredient-input" type="text" placeholder="Enter ingredient (e.g., chicken breast)" 
+                               class="w-full px-4 py-2 border rounded-l focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <button id="add-ingredient" class="bg-green-500 text-white px-4 py-2 rounded-r hover:bg-green-600 transition duration-200">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    <div id="ingredients-container" class="flex flex-wrap gap-2 mt-4">
+                        <!-- Ingredient tags will be added here -->
+                    </div>
+                </div>
+
+                <!-- Preferences Section -->
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4">Dietary Preferences</h2>
+                    <textarea id="dietary-preferences" rows="3" placeholder="Describe your dietary needs (e.g., low carb, high protein, vegetarian, etc.)" 
+                              class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500"></textarea>
+                    
+                    <h3 class="text-xl font-semibold mt-6 mb-2">Nutrition Goals (per 100g)</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-1">Energy (kcal)</label>
+                            <input id="energy-goal" type="number" placeholder="e.g., 1500" 
+                                   class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500">
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-1">Fat (g)</label>
+                            <input id="fat-goal" type="number" placeholder="e.g., 30" 
+                                   class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500">
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-1">Protein (g)</label>
+                            <input id="protein-goal" type="number" placeholder="e.g., 40" 
+                                   class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500">
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-1">Carbs (g)</label>
+                            <input id="carbs-goal" type="number" placeholder="e.g., 50" 
+                                   class="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-green-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-center mt-8">
+                <button id="find-recipes" class="bg-blue-600 text-white px-6 py-3 rounded-full text-lg font-semibold hover:bg-blue-700 transition duration-200 flex items-center">
+                    <i class="fas fa-search mr-2"></i>
+                    Find Recipes
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden flex justify-center items-center py-12">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+            <p class="ml-4 text-lg text-gray-600">Finding the perfect recipes for you...</p>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-container" class="hidden">
+            <h2 class="text-2xl font-semibold mb-6">Recommended Recipes</h2>
+            <div id="recipes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Recipe cards will be added here -->
+            </div>
+        </div>
+
+        <!-- No Results Message -->
+        <div id="no-results" class="hidden text-center py-12">
+            <i class="fas fa-utensils text-4xl text-gray-400 mb-4"></i>
+            <h3 class="text-2xl font-semibold text-gray-600">No recipes found</h3>
+            <p class="text-gray-500 mt-2">Try adding more ingredients or adjusting your preferences</p>
+        </div>
+    </div>
+
+    <!-- Recipe Modal -->
+    <div id="recipe-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg max-w-4xl w-full max-h-screen overflow-y-auto mx-4">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h3 id="modal-title" class="text-2xl font-bold"></h3>
+                    <button id="close-modal" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div id="modal-content" class="mt-4">
+                    <!-- Modal content will be added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // State
+            const state = {
+                ingredients: [],
+                dietaryPreference: '',
+                nutritionGoals: {}
+            };
+
+            // DOM Elements
+            const ingredientInput = document.getElementById('ingredient-input');
+            const addIngredientBtn = document.getElementById('add-ingredient');
+            const ingredientsContainer = document.getElementById('ingredients-container');
+            const dietaryPreferencesInput = document.getElementById('dietary-preferences');
+            const energyGoalInput = document.getElementById('energy-goal');
+            const fatGoalInput = document.getElementById('fat-goal');
+            const proteinGoalInput = document.getElementById('protein-goal');
+            const carbsGoalInput = document.getElementById('carbs-goal');
+            const findRecipesBtn = document.getElementById('find-recipes');
+            const loadingIndicator = document.getElementById('loading');
+            const resultsContainer = document.getElementById('results-container');
+            const recipesContainer = document.getElementById('recipes-container');
+            const noResultsMessage = document.getElementById('no-results');
+            const recipeModal = document.getElementById('recipe-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+            const closeModalBtn = document.getElementById('close-modal');
+
+            // Event Listeners
+            addIngredientBtn.addEventListener('click', addIngredient);
+            ingredientInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    addIngredient();
+                }
+            });
+            findRecipesBtn.addEventListener('click', findRecipes);
+            closeModalBtn.addEventListener('click', closeModal);
+
+            // Functions
+            function addIngredient() {
+                const ingredient = ingredientInput.value.trim();
+                if (ingredient && !state.ingredients.includes(ingredient)) {
+                    state.ingredients.push(ingredient);
+                    renderIngredients();
+                    ingredientInput.value = '';
+                }
+                ingredientInput.focus();
+            }
+
+            function renderIngredients() {
+                ingredientsContainer.innerHTML = '';
+                state.ingredients.forEach((ingredient, index) => {
+                    const tag = document.createElement('div');
+                    tag.className = 'ingredient-tag bg-green-100 text-green-800 px-3 py-1 rounded-full flex items-center';
+                    tag.innerHTML = `
+                        <span>${ingredient}</span>
+                        <button class="ml-2 text-green-600 hover:text-green-800" data-index="${index}">
+                            <i class="fas fa-times-circle"></i>
+                        </button>
+                    `;
+                    ingredientsContainer.appendChild(tag);
+                    
+                    // Add remove event listener
+                    tag.querySelector('button').addEventListener('click', function() {
+                        state.ingredients.splice(this.dataset.index, 1);
+                        renderIngredients();
+                    });
+                });
+            }
+
+            async function findRecipes() {        
+                // Update state
+                state.dietaryPreference = dietaryPreferencesInput.value;
+                state.nutritionGoals = {
+                    energy: energyGoalInput.value ? parseInt(energyGoalInput.value) : null,
+                    fat: fatGoalInput.value ? parseInt(fatGoalInput.value) : null,
+                    protein: proteinGoalInput.value ? parseInt(proteinGoalInput.value) : null,
+                    carbohydrate: carbsGoalInput.value ? parseInt(carbsGoalInput.value) : null
+                };
+
+                // Validate
+                if (state.ingredients.length === 0) {
+                    alert('Please add at least one ingredient');
+                    return;
+                }
+
+                /* ---------- SHOW LOADER ---------- */
+                loadingIndicator.classList.remove('hidden');
+                loadingIndicator.classList.add('flex');
+
+                // Hide previous results
+                resultsContainer.classList.add('hidden');
+                noResultsMessage.classList.add('hidden');
+
+                try {
+                    const res = await fetch('http://localhost:8000/api/recommend', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ingredients: state.ingredients,
+                            dietary_preference: dietaryPreferencesInput.value,
+                            nutrition_goals: state.nutritionGoals,
+                            max_missing: 2,
+                            top_k: 3
+                        })
+                    });
+                    const data = await res.json();
+                    renderResults(data.recommendations || []);
+                } catch (err) {
+                    console.error(err);
+                    alert('Backend error – check console');
+                } finally {
+                    /* ---------- HIDE LOADER ---------- */
+                    loadingIndicator.classList.add('hidden');
+                    loadingIndicator.classList.remove('flex');
+                }
+            }
+
+            function renderResults(results) {
+                const API_BASE = 'http://localhost:8000';   // Flask origin
+                // hide the empty‑state banner for any new response
+                noResultsMessage.classList.add('hidden');
+
+                // if zero results -> show banner, clear old cards, bail out
+                if (results.length === 0) {
+                    recipesContainer.innerHTML = '';
+                    noResultsMessage.classList.remove('hidden');
+                    return;
+                } 
+
+                recipesContainer.innerHTML = '';
+                results.forEach(recipe => {
+                    const card = document.createElement('div');
+                    card.className = 'recipe-card bg-white rounded-lg shadow-md overflow-hidden';
+                    
+                    // Format nutrition
+                    const protein = recipe.nutrition_per_100g.protein || 'N/A';
+                    const carbs = recipe.nutrition_per_100g.carbohydrate || 'N/A';
+                    const fat = recipe.nutrition_per_100g.fat || 'N/A';
+                    
+                    card.innerHTML = `
+                        <div class="h-48 overflow-hidden rounded-t bg-gray-100">
+                            <img src="${API_BASE + recipe.image_url || API_BASE + '/static/plate_placeholder.png'}"
+                                alt="${recipe.title}"
+                                loading="lazy"
+                                class="object-cover h-full w-full">
+                        </div>
+                        <div class="p-4">
+                            <h3 class="text-xl font-semibold mb-2">${recipe.title}</h3>
+                            <p class="text-gray-600 mb-3">${recipe.explanation}</p>
+                            
+                            <div class="mb-3">
+                                <div class="flex items-center text-sm">
+                                    <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2">Protein: ${protein}g</span>
+                                    <span class="bg-green-100 text-green-800 px-2 py-1 rounded mr-2">Carbs: ${carbs}g</span>
+                                    <span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Fat: ${fat}g</span>
+                                </div>
+                            </div>
+                            
+                            <button class="view-recipe-btn w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition duration-200">
+                                View Recipe
+                            </button>
+                        </div>
+                    `;
+                    
+                    recipesContainer.appendChild(card);
+                    
+                    // Add event listener to view recipe button
+                    card.querySelector('.view-recipe-btn').addEventListener('click', () => {
+                        showRecipeModal(recipe);
+                    });
+                });
+
+                resultsContainer.classList.remove('hidden');
+            }
+
+            function showRecipeModal(recipe) {
+                modalTitle.textContent = recipe.title;
+                
+                // Format ingredients
+                const ingredientsList = recipe.ingredients_clean.map(ing => `<li class="mb-1"><i class="fas fa-check text-green-500 mr-2"></i>${ing}</li>`).join('');
+                
+                // Format instructions
+                const instructionsHtml = recipe.clean_instructions
+                    .split('\n')
+                    .filter(line => line.trim())
+                    .map((step, index) => `<li class="mb-3"><span class="bg-blue-100 text-blue-800 rounded-full w-6 h-6 inline-flex items-center justify-center mr-2">${index + 1}</span>${step}</li>`)
+                    .join('');
+                
+                // Format nutrition
+                let nutritionHtml = '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">';
+                for (const [key, value] of Object.entries(recipe.nutrition_per_100g)) {
+                    let color;
+                    switch(key) {
+                        case 'protein': color = 'blue'; break;
+                        case 'carbohydrate': color = 'green'; break;
+                        case 'fat': color = 'yellow'; break;
+                        case 'energy': color = 'red'; break;
+                        default: color = 'gray';
+                    }
+                    
+                    nutritionHtml += `
+                        <div class="bg-${color}-50 p-3 rounded-lg text-center">
+                            <div class="text-${color}-800 font-semibold">${key}</div>
+                            <div class="text-xl font-bold text-${color}-600">${value}${key === 'energy' ? ' kcal' : 'g'}</div>
+                        </div>
+                    `;
+                }
+                nutritionHtml += '</div>';
+                
+                modalContent.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-xl font-semibold mb-3">Ingredients</h4>
+                            <ul class="list-none">
+                                ${ingredientsList}
+                            </ul>
+                            
+                            <h4 class="text-xl font-semibold mt-6 mb-3">Nutrition (per 100g)</h4>
+                            ${nutritionHtml}
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-xl font-semibold mb-3">Instructions</h4>
+                            <ol class="list-none">
+                                ${instructionsHtml}
+                            </ol>
+                        </div>
+                    </div>
+                `;
+                
+                recipeModal.classList.remove('hidden');
+                recipeModal.classList.add('flex');
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeModal() {
+                recipeModal.classList.add('hidden');
+                recipeModal.classList.remove('flex');
+                document.body.style.overflow = '';
+            }
+
+            // Click outside modal to close
+            recipeModal.addEventListener('click', function(e) {
+                if (e.target === recipeModal) {
+                    closeModal();
+                }
+            });
+
+            // Mock data for demo purposes
+            function getMockResults() {
+                return [
+                    {
+                        id: 1,
+                        title: "Spicy Chicken Stir-Fry with Broccoli",
+                        ingredients_clean: ["skinless chicken breast", "broccoli florets", "bell pepper", "garlic", "soy sauce", "sesame oil", "red pepper flakes"],
+                        clean_instructions: "1. Cut chicken into thin strips.\n2. Heat oil in a wok or large skillet over high heat.\n3. Add chicken and stir fry until no longer pink, about 3-4 minutes.\n4. Add broccoli and bell pepper, stir fry for 2 minutes.\n5. Add garlic, soy sauce, and red pepper flakes.\n6. Stir fry until vegetables are crisp-tender, about 1-2 more minutes.\n7. Drizzle with sesame oil before serving.",
+                        nutrition_per_100g: {
+                            protein: 25,
+                            carbohydrate: 8,
+                            fat: 12,
+                            energy: 240
+                        },
+                        explanation: "This high-protein, low-carb stir-fry is perfect for a quick weeknight dinner, using your chicken breast and broccoli."
+                    },
+                    {
+                        id: 2,
+                        title: "Beef and Vegetable Pasta Primavera",
+                        ingredients_clean: ["beef", "spaghetti", "carrots", "zucchini", "cherry tomatoes", "garlic", "olive oil", "parmesan cheese"],
+                        clean_instructions: "1. Cook spaghetti according to package directions. Drain and set aside.\n2. Heat olive oil in a large skillet over medium-high heat.\n3. Add sliced beef and cook until browned, about 5 minutes.\n4. Add sliced carrots and zucchini, cook for 3 minutes.\n5. Add cherry tomatoes and minced garlic, cook for 2 more minutes.\n6. Toss with cooked pasta and sprinkle with grated parmesan cheese.",
+                        nutrition_per_100g: {
+                            protein: 18,
+                            carbohydrate: 22,
+                            fat: 9,
+                            energy: 245
+                        },
+                        explanation: "This pasta dish incorporates your beef, spaghetti, and carrots into a balanced meal that's ready in under 30 minutes."
+                    },
+                    {
+                        id: 3,
+                        title: "Brown Rice Bowl with Chicken and Vegetables",
+                        ingredients_clean: ["brown basmati rice", "skinless chicken breast", "broccoli florets", "carrots", "olive oil", "lemon juice", "garlic powder", "sea salt"],
+                        clean_instructions: "1. Cook brown rice according to package directions.\n2. Meanwhile, cut chicken into bite-sized pieces and season with garlic powder and salt.\n3. Heat olive oil in a skillet over medium heat.\n4. Cook chicken until no longer pink, about 6-8 minutes.\n5. Steam broccoli and carrots until tender-crisp.\n6. Arrange rice, chicken, and vegetables in a bowl.\n7. Drizzle with lemon juice and additional olive oil if desired.",
+                        nutrition_per_100g: {
+                            protein: 20,
+                            carbohydrate: 25,
+                            fat: 6,
+                            energy: 230
+                        },
+                        explanation: "This nutritious bowl combines your brown rice, chicken, broccoli, and carrots for a balanced meal that's high in protein and complex carbs."
+                    }
+                ];
+            }
+
+            // Add sample ingredients for demo
+            ['skinless chicken breast', 'broccoli florets', 'brown basmati rice', 'beef', 'spaghetti', 'carrots'].forEach(ing => {
+                state.ingredients.push(ing);
+            });
+            renderIngredients();
+            
+            // Set sample dietary preference
+            dietaryPreferencesInput.value = "high protein, low carb, quick dinner";
+        });
+    </script>
+</body>
+</html>

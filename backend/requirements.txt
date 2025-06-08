@@ -1,0 +1,13 @@
+flask==3.1.0
+flask-cors==5.0.1
+faiss-cpu==1.11.0
+numpy==1.24.3
+pandas==2.2.3
+python-dotenv==1.1.0
+langchain==0.3.24
+langchain-community==0.3.23
+langchain-openai==0.3.16
+transformers==4.51.3
+torch==2.1.2
+scikit-learn==1.6.1
+sentence-transformers==4.1.0 

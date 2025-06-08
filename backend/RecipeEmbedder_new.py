@@ -187,40 +187,43 @@ class RecipeEmbedder:
     def create_query_embedding(self, ingredients, dietary_preference, nutrition_goals=None):
         self.logger.info("Creating query embedding...")
 
-             # --- Step 1: Title + Instruction Text Embedding (768)
-        title_instruction = f"{dietary_preference}. Ingredients: {' '.join(ingredients)}."
-        text_emb = self.create_text_embeddings([title_instruction])[0]
+        # --- Step 1: Dietary_preference (384)
+        #ingredients_string= ", ".join(ingredients)
+        #dietpref_emb = self.create_text_embeddings([ingredients_string])[0]
         
-        # --- Step 2: Nutrition embedding (15)
-        if nutrition_goals is not None:
-            # Ordered features
-            keys = ['energy', 'fat', 'saturates', 'sugars', 'protein', 'salt']
-            raw_nutrition = [nutrition_goals.get(k, 0) for k in keys]
-            derived_nutrition = self.create_nutrition_embeddings([raw_nutrition], mode='test')[0]
-        else:
-            derived_nutrition = np.zeros(15)
+        # --- Step 2: Ingredient embedding (384)
+        ingredients_string= ", ".join(ingredients)
+        ingredient_emb = self.create_text_embeddings([ingredients_string])[0]
+        
+        # --- Step 3: Nutrition embedding (15)
+        #if nutrition_goals is not None:
+        #    # Ordered features
+        #    keys = ['energy', 'fat', 'saturates', 'sugars', 'protein', 'salt']
+        #    raw_nutrition = [nutrition_goals.get(k, 0) for k in keys]
+        #    derived_nutrition = self.create_nutrition_embeddings([raw_nutrition], mode='test')[0]
+        #else:
+        #    derived_nutrition = np.zeros(15)
 
         # --- Step 3: FSA (keep dummy unless explicitly provided later) (9)
-        dummy_fsa = np.zeros(9)
+        #dummy_fsa = np.zeros(9)
 
-        # --- Step 4: Ingredient embedding (385)
-        ingredient_text = " ".join(ingredients)
-        ingredient_emb = self.create_text_embeddings([ingredient_text])[0]
+        
 
         # --- Combine all
-        query_embedding = np.concatenate([
-            text_emb,
-            derived_nutrition,
-            dummy_fsa,
-            ingredient_emb
-        ])
+        #query_embedding = np.concatenate([
+        #    dietpref_emb,
+        #    derived_nutrition,
+        #    dummy_fsa,
+        #    ingredient_emb
+        # )
         # DEBUG: Print shapes of each component
-        print("preference_emb:", text_emb.shape)
-        print("derived_nutrition:", np.array(derived_nutrition).shape)
-        print("dummy_fsa:", dummy_fsa.shape)
-        print("ingredient_emb:", ingredient_emb.shape)
-        print("Total combined:", query_embedding.shape)
-        assert query_embedding.shape[0] == 792, f"Expected embedding size 793 but got {query_embedding.shape[0]}"
+        #print("preference_emb:", dietpref_emb.shape)
+        #print("derived_nutrition:", np.array(derived_nutrition).shape)
+        #print("dummy_fsa:", dummy_fsa.shape)
+        #print("ingredient_emb:", ingredient_emb.shape)
+        #print("Total combined:", query_embedding.shape)
+        #assert query_embedding.shape[0] == 792, f"Expected embedding size 792 but got {query_embedding.shape[0]}"
+        query_embedding = ingredient_emb
         return query_embedding.astype("float32")
     
     def create_query_embedding_new(self, ingredients):
