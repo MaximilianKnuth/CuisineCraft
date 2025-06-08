@@ -6,7 +6,7 @@ A full-stack application for personalized recipe recommendations using advanced 
 
 ## Demo
 
-![UI Screenshot](path/to/your/screenshot.png)
+![UI Screenshot](UI_Screenshot.png)
 
 ---
 
